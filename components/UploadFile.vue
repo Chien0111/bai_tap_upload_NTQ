@@ -2,9 +2,8 @@
   <div class="p-6">
     <div
       class="file-input-container"
-      @dragover.prevent="handleDragOver"
+      @dragover.prevent
       @drop.prevent="handleDrop"
-      @click="openFilePicker"
     >
       <input
         ref="fileInput"
@@ -13,9 +12,23 @@
         @change="handleFileChange"
         multiple
       />
+      <input
+        ref="folderInput"
+        type="file"
+        style="display: none"
+        @change="handleFolderChange"
+        webkitdirectory
+        multiple
+      />
       <div class="file-input-label">
         <span>Chọn tệp hoặc kéo và thả vào đây</span>
       </div>
+      <button @click="openFilePicker" class="bg-gray-300 p-6 rounded m-2">
+        UploadFile
+      </button>
+      <button @click="openFolderPicker" class="bg-gray-300 p-6 rounded m-2">
+        UploadFolder
+      </button>
       <div v-if="selectedFiles.length > 0">
         <p>Danh sách tệp đã chọn:</p>
       </div>
@@ -28,6 +41,13 @@
       >
         <div>
           <img
+            v-if="file.length > 0"
+            src="../static/folder.png"
+            alt=""
+            class="w-[50px] h-[50px]"
+          />
+          <img
+            v-else
             :src="file.previewSrc"
             :alt="file.name"
             class="w-[50px] h-[50px]"
@@ -37,16 +57,24 @@
           <div class="flex justify-between">
             <span>
               {{ file.name }}
-              <span v-if="file.uploadProgress > 1" class="font-bold">{{
+              <span v-if="file.uploadStatus" class="text-cyan-600">
+                {{ file.uploadStatus }}</span
+              >
+              <span v-else-if="file.uploadProgress > 1" class="font-bold">{{
                 file.uploadProgress + "%"
               }}</span>
               <span v-else class="text-amber-500">Pending</span>
             </span>
-            <span class="hover:cursor-pointer" @click="removeFile(index)"
-              >X</span
-            >
+            <span>
+              <span v-if="file.length" class="mr-2 font-bold text-xl"
+                >/{{ file.length }}</span
+              >
+              <span class="hover:cursor-pointer" @click="removeFile(index)"
+                >X</span
+              >
+            </span>
           </div>
-          <div class="progress">
+          <div class="progress" v-if="file.uploadStatus !== 'Done'">
             <div
               v-if="file.uploadProgress !== undefined"
               :class="{
@@ -55,7 +83,7 @@
                 'mt-0': true,
                 'h-[8px]': true,
                 rounded: true,
-                'progress-bar-animated': file.uploadProgress > 80,
+                'progress-bar-animated': file.uploadProgress === 100,
               }"
               role="progressbar"
               aria-valuenow="75"
@@ -67,9 +95,7 @@
         </div>
       </li>
     </ul>
-    <button @click="handleSubmit" class="w-full bg-slate-200 py-3 font-bold">
-      Gửi
-    </button>
+    <button class="bg-red text-white" @click="check">bg-indigo-500 </button>
   </div>
 </template>
 
@@ -79,7 +105,6 @@ export default {
   data() {
     return {
       selectedFiles: [],
-      fileInputActive: false,
       uploading: false,
       maxConcurrentUploads: 3,
     };
@@ -90,171 +115,133 @@ export default {
         ...this.selectedFiles,
         ...this.getFileListFromEvent(event),
       ];
-      this.previewFiles();
+      this.uploadFiles();
+    },
+
+    handleFolderChange(event) {
+      this.selectedFiles = [
+        ...this.selectedFiles,
+        [...this.getFileListFromEvent(event)],
+      ];
       this.uploadFiles();
     },
 
     openFilePicker() {
       this.$refs.fileInput.click();
     },
-
-    handleDragOver(event) {
-      this.fileInputActive = true;
+    openFolderPicker() {
+      this.$refs.folderInput.click();
     },
 
     handleDrop(event) {
-      if (this.fileInputActive) {
-        this.fileInputActive = false;
-        this.handleFileChange(event);
+      this.handleFileChange(event);
+    },
+
+    async uploadFiles() {
+      while (this.uploading) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
+      this.uploading = true;
+
+      try {
+        const uploadPromises = [];
+
+        for (let index = 0; index < this.selectedFiles.length; index++) {
+          const file = this.selectedFiles[index];
+          if (file.length) {
+            for (const item of file) {
+              await this.uploadProgress(item, index, 20);
+            }
+          }
+          if (!file.previewSrc) {
+            file.previewSrc = URL.createObjectURL(file);
+          }
+
+          if (file.uploadProgress === 100) {
+            continue;
+          }
+
+          const uploadPromise = this.uploadFile(file, index);
+          uploadPromises.push(uploadPromise);
+
+          if (uploadPromises.length >= this.maxConcurrentUploads) {
+            // Chờ tất cả các promises trong danh sách đồng thời hoàn thành
+            await Promise.all(uploadPromises);
+            uploadPromises.length = 0; // Đặt lại mảng promises
+          }
+        }
+
+        // Chờ tất cả các promises còn lại (nếu có)
+        await Promise.all(uploadPromises);
+      } finally {
+        this.uploading = false;
+      }
+    },
+
+    async uploadFile(file, index) {
+      const uploadPromise = new Promise((resolve) => {
+        let percent = 0;
+        const intervalId = setInterval(() => {
+          percent += 20;
+          this.uploadProgress(file, index, Math.min(percent, 100));
+
+          if (percent >= 100) {
+            clearInterval(intervalId);
+            resolve();
+          }
+        }, 1000);
+      });
+
+      await uploadPromise;
+
+      setTimeout(() => {
+        this.$set(this.selectedFiles, index, {
+          ...file,
+          uploadProgress: 100,
+          uploadStatus: "Scaning",
+        });
+
+        setTimeout(() => {
+          this.$set(this.selectedFiles, index, {
+            ...file,
+            uploadProgress: 100,
+            uploadStatus: "Done",
+          });
+        }, 500);
+      }, 500);
+    },
+
+    async uploadProgress(file, index, progress) {
+      return new Promise((resolve) => {
+        this.$set(this.selectedFiles, index, {
+          ...file,
+          uploadProgress: progress,
+        });
+
+        resolve();
+      });
+    },
+
+    getFileListFromEvent(event) {
+      const fileList = event.dataTransfer
+        ? event.dataTransfer.files
+        : event.target.files;
+
+      return Array.from(fileList).map((file) => ({
+        name: file.name,
+        previewSrc: URL.createObjectURL(file),
+      }));
     },
 
     removeFile(index) {
       this.selectedFiles.splice(index, 1);
     },
 
-    async uploadFiles() {
-      // Chờ một khoảng thời gian rồi kiểm tra lại
-      while (this.uploading) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      this.uploading = true; // Bắt đầu quá trình upload
-      try {
-        const uploadPromises = [];
-        for (let index = 0; index < this.selectedFiles.length; index++) {
-          const file = this.selectedFiles[index];
-
-          // Kiểm tra xem upload đã đạt 100 chưa
-          if (file.uploadProgress === 100) {
-            continue; // Nếu đã đạt 100, bỏ qua và chuyển sang file tiếp theo
-          }
-
-          // Bắt đầu tải lên từng file
-          const uploadPromise = this.uploadFile(file, index);
-          uploadPromises.push(uploadPromise);
-
-          // Nếu đạt số lượng file tải lên đồng thời, chờ tất cả kết thúc và tiếp tục
-          if (uploadPromises.length >= this.maxConcurrentUploads) {
-            await Promise.all(uploadPromises);
-            uploadPromises.length = 0; // Đặt lại mảng promises
-          }
-        }
-        await Promise.all(uploadPromises);
-      } finally {
-        this.uploading = false; // Kết thúc quá trình upload
-      }
-    },
-
-    async uploadFile(file, index) {
-      await this.uploadProgress(file, index, 20);
-      await this.uploadProgress(file, index, 40);
-      await this.uploadProgress(file, index, 60);
-      await this.uploadProgress(file, index, 80);
-      await this.uploadProgress(file, index, 100);
-    },
-
-    async uploadProgress(file, index, progress) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          const newProgress = Math.min(progress, 100); // Đảm bảo không vượt quá 100
-          this.$set(this.selectedFiles, index, {
-            ...file,
-            uploadProgress: newProgress,
-          });
-
-          resolve();
-        }, progress * 10); // Thay đổi giá trị này nếu cần điều chỉnh tốc độ upload
-      });
-    },
-
-    getFileListFromEvent(event) {
-      if (event.dataTransfer) {
-        return Array.from(event.dataTransfer.files).map((file) => ({
-          name: file.name,
-          previewSrc: URL.createObjectURL(file),
-        }));
-      } else if (event.target.files) {
-        return Array.from(event.target.files).map((file) => ({
-          name: file.name,
-          previewSrc: URL.createObjectURL(file),
-        }));
-      }
-    },
-
-    handleSubmit() {
-      console.log("Files submitted:", this.selectedFiles);
-    },
-
-    previewFiles() {
-      this.selectedFiles.forEach((file) => {
-        if (!file.previewSrc) {
-          file.previewSrc = URL.createObjectURL(file);
-        }
-      });
+    check() {
+      console.log("this", this.selectedFiles);
     },
   },
 };
 </script>
 
-<style scoped>
-.file-input-container {
-  position: relative;
-  overflow: hidden;
-  border: 2px dashed #3498db;
-  border-radius: 5px;
-  padding: 20px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.file-input-label {
-  display: block;
-}
-
-.file-input-label span {
-  display: block;
-}
-
-.file-input-label span:last-child {
-  font-weight: bold;
-}
-
-.file-input-container.active {
-  border-color: #2ecc71;
-}
-
-.file-input-label span {
-  display: block;
-  cursor: pointer;
-}
-
-.file-input-label span:hover {
-  color: red;
-}
-.progress {
-  background: white !important;
-  border-radius: 0 !important;
-}
-.progress-bar {
-  background-color: #db9834;
-}
-
-.progress-bar div {
-  height: 100%;
-  background-color: #2ecc71;
-  transition: width 0.3s ease-in-out;
-}
-.progress-bar-striped {
-  background-image: linear-gradient(
-    125deg,
-    rgba(255, 255, 255, 0.15) 25%,
-    transparent 25%,
-    transparent 50%,
-    rgba(255, 255, 255, 0.15) 50%,
-    rgba(255, 255, 255, 0.15) 75%,
-    transparent 75%,
-    transparent
-  );
-}
-</style>
+<style src="../assets/uploadFile.css" scoped />
