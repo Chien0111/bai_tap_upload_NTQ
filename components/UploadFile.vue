@@ -1,244 +1,202 @@
 <template>
   <div class="p-6">
-    <div
-      class="file-input-container"
-      @dragover.prevent
-      @drop.prevent="handleDrop"
-    >
+    <div class="file-input-container" @dragover.prevent @drop="handleDrop">
       <input
-        ref="fileInput"
+        class="mb-3"
         type="file"
-        style="display: none"
-        @change="handleFileChange"
+        name="file"
+        ref="inputFile"
         multiple
+        hidden
+        @change="handleChangeFile"
       />
+      <button @click="handleOpen('file')" class="bg-slate-300 rounded p-4 m-2">
+        Upload file
+      </button>
+
       <input
-        ref="folderInput"
+        class="mb-3"
         type="file"
-        style="display: none"
-        @change="handleFolderChange"
+        name="file"
+        ref="inputFolder"
         webkitdirectory
         multiple
+        hidden
+        @change="handleChangeFolder"
       />
-      <div class="file-input-label">
-        <span>Chọn tệp hoặc kéo và thả vào đây</span>
-      </div>
-      <button @click="openFilePicker" class="bg-gray-300 p-6 rounded m-2">
-        UploadFile
+      <button
+        @click="handleOpen('folder')"
+        class="bg-slate-300 rounded p-4 m-2"
+      >
+        Upload folder
       </button>
-      <button @click="openFolderPicker" class="bg-gray-300 p-6 rounded m-2">
-        UploadFolder
-      </button>
-      <div v-if="selectedFiles.length > 0">
-        <p>Danh sách tệp đã chọn:</p>
-      </div>
     </div>
     <ul class="border border-indigo-600 my-6">
       <li
-        v-for="(file, index) in selectedFiles"
+        v-for="(item, index) in files"
         :key="index"
-        class="p-2 flex item-center border-b-2 border-indigo-600"
+        class="flex item-center m-2"
       >
         <div>
           <img
-            v-if="file.length > 0"
+            v-if="item.preview === 'folder'"
             src="../static/folder.png"
             alt=""
             class="w-[50px] h-[50px]"
           />
-          <img
-            v-else
-            :src="file.previewSrc"
-            :alt="file.name"
-            class="w-[50px] h-[50px]"
-          />
+          <img v-else :src="item.preview" class="w-[50px] h-[50px]" />
         </div>
-        <div class="p-2 flex-1">
-          <div class="flex justify-between">
-            <span>
-              {{ file.name }}
-              <span v-if="file.uploadStatus" class="text-cyan-600">
-                {{ file.uploadStatus }}</span
-              >
-              <span v-else-if="file.uploadProgress > 1" class="font-bold">{{
-                file.uploadProgress + "%"
+        <div class="w-[90%] p-2">
+          <div class="text-lg mb-2 flex justify-between">
+            <div>
+              {{ item.name }}
+              <span v-if="item.process !== 100" class="font-bold">{{
+                item.process + "%"
               }}</span>
-              <span v-else class="text-amber-500">Pending</span>
-            </span>
-            <span>
-              <span v-if="file.length" class="mr-2 font-bold text-xl"
-                >/{{ file.length }}</span
+              <span v-if="item.isScan" class="ml-2" style="color: #ffcc66"
+                >Scanning...</span
               >
-              <span class="hover:cursor-pointer" @click="removeFile(index)"
-                >X</span
-              >
-            </span>
-          </div>
-          <div class="progress" v-if="file.uploadStatus !== 'Done'">
+            </div>
             <div
-              v-if="file.uploadProgress !== undefined"
-              :class="{
-                'progress-bar': true,
-                'progress-bar-striped': true,
-                'mt-0': true,
-                'h-[8px]': true,
-                rounded: true,
-                'progress-bar-animated': file.uploadProgress === 100,
-              }"
-              role="progressbar"
-              aria-valuenow="75"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :style="{ width: file.uploadProgress + '%' }"
-            ></div>
+              class="hover:cursor-pointer flex"
+              @click="handleDeleteFile(index)"
+            >
+              <span v-if="item.fileLength" class="font-bold text-xl mr-3"
+                >{{ item.processFile }}/{{ item.fileLength }}</span
+              >
+              <span>X</span>
+            </div>
           </div>
+          <div
+            v-if="item.isShowProgress"
+            :class="{
+              'progress-bar': true,
+              'progress-bar-striped': true,
+              'mt-0': true,
+              'h-[8px]': true,
+              rounded: true,
+              'progress-bar-animated': item.process === 100,
+            }"
+            role="progressbar"
+            aria-valuenow="75"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :style="{ width: item.process + '%' }"
+          ></div>
         </div>
       </li>
     </ul>
-    <button class="bg-red text-white" @click="check">bg-indigo-500 </button>
   </div>
 </template>
-
 <script>
 export default {
-  name: "UploadFile",
   data() {
     return {
-      selectedFiles: [],
-      uploading: false,
-      maxConcurrentUploads: 3,
+      files: [],
     };
   },
   methods: {
-    handleFileChange(event) {
-      this.selectedFiles = [
-        ...this.selectedFiles,
-        ...this.getFileListFromEvent(event),
-      ];
-      this.uploadFiles();
+    handleChangeFile(event) {
+      this.handleChangeListFile([...event.target.files], "file");
     },
-
-    handleFolderChange(event) {
-      this.selectedFiles = [
-        ...this.selectedFiles,
-        [...this.getFileListFromEvent(event)],
-      ];
-      this.uploadFiles();
+    handleChangeFolder(event) {
+      this.handleChangeListFile([...event.target.files], "folder");
     },
-
-    openFilePicker() {
-      this.$refs.fileInput.click();
-    },
-    openFolderPicker() {
-      this.$refs.folderInput.click();
-    },
-
     handleDrop(event) {
-      this.handleFileChange(event);
-    },
+      event.preventDefault();
+      const dt = event.dataTransfer;
+      const items = dt.items;
 
-    async uploadFiles() {
-      while (this.uploading) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      this.uploading = true;
-
-      try {
-        const uploadPromises = [];
-
-        for (let index = 0; index < this.selectedFiles.length; index++) {
-          const file = this.selectedFiles[index];
-          if (file.length) {
-            for (const item of file) {
-              await this.uploadProgress(item, index, 20);
-            }
-          }
-          if (!file.previewSrc) {
-            file.previewSrc = URL.createObjectURL(file);
-          }
-
-          if (file.uploadProgress === 100) {
-            continue;
-          }
-
-          const uploadPromise = this.uploadFile(file, index);
-          uploadPromises.push(uploadPromise);
-
-          if (uploadPromises.length >= this.maxConcurrentUploads) {
-            // Chờ tất cả các promises trong danh sách đồng thời hoàn thành
-            await Promise.all(uploadPromises);
-            uploadPromises.length = 0; // Đặt lại mảng promises
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file") {
+          const entry = item.webkitGetAsEntry();
+          if (entry.isDirectory) {
+            //folder
+            this.readDirectory(entry, (numberOfEntries) => {
+              const item = {
+                name: entry.name,
+                fileLength: numberOfEntries,
+              };
+              this.uploadFiles(item, "folder");
+            });
+          } else {
+            // file
+            this.handleChangeListFile([item.getAsFile()], "file");
           }
         }
-
-        // Chờ tất cả các promises còn lại (nếu có)
-        await Promise.all(uploadPromises);
-      } finally {
-        this.uploading = false;
       }
     },
-
-    async uploadFile(file, index) {
-      const uploadPromise = new Promise((resolve) => {
-        let percent = 0;
-        const intervalId = setInterval(() => {
-          percent += 20;
-          this.uploadProgress(file, index, Math.min(percent, 100));
-
-          if (percent >= 100) {
-            clearInterval(intervalId);
-            resolve();
-          }
-        }, 1000);
-      });
-
-      await uploadPromise;
-
-      setTimeout(() => {
-        this.$set(this.selectedFiles, index, {
-          ...file,
-          uploadProgress: 100,
-          uploadStatus: "Scaning",
-        });
-
-        setTimeout(() => {
-          this.$set(this.selectedFiles, index, {
-            ...file,
-            uploadProgress: 100,
-            uploadStatus: "Done",
-          });
-        }, 500);
-      }, 500);
-    },
-
-    async uploadProgress(file, index, progress) {
-      return new Promise((resolve) => {
-        this.$set(this.selectedFiles, index, {
-          ...file,
-          uploadProgress: progress,
-        });
-
-        resolve();
+    readDirectory(directoryEntry, callback) {
+      const directoryReader = directoryEntry.createReader();
+      directoryReader.readEntries((entries) => {
+        const numberOfEntries = entries.length;
+        callback(numberOfEntries);
       });
     },
-
-    getFileListFromEvent(event) {
-      const fileList = event.dataTransfer
-        ? event.dataTransfer.files
-        : event.target.files;
-
-      return Array.from(fileList).map((file) => ({
+    handleOpen(val) {
+      if (val == "file") {
+        this.$refs.inputFile.click();
+      } else {
+        this.$refs.inputFolder.click();
+      }
+    },
+    uploadFiles(file, type) {
+      const progressItem = {
+        ...file,
         name: file.name,
-        previewSrc: URL.createObjectURL(file),
-      }));
+        preview: type === "file" ? URL.createObjectURL(file) : "folder",
+        fileLength: type === "file" ? "" : file.fileLength,
+        process: 0,
+        processFile: 0,
+        isScan: false,
+        isShowProgress: true,
+      };
+      const intervalId = setInterval(() => {
+        if (type === "file") {
+          progressItem.process += 20;
+        } else if (progressItem.processFile <= progressItem.fileLength) {
+          progressItem.processFile += 1;
+          progressItem.process = Math.floor(
+            (progressItem.processFile / progressItem.fileLength) * 100
+          );
+        }
+        if (progressItem.process == 100) {
+          clearInterval(intervalId);
+          progressItem.isScan = true;
+          const intervalScan = setTimeout(() => {
+            if (progressItem.process < 100) {
+              progressItem.process += 20;
+              progressItem.processFile = Math.round(
+                (progressItem.fileLength * progressItem.process) / 100
+              );
+            } else {
+              clearTimeout(intervalScan);
+              progressItem.isScan = false;
+              progressItem.isShowProgress = false;
+            }
+          }, 3000);
+        }
+      }, 1000);
+      this.files.push(progressItem);
     },
-
-    removeFile(index) {
-      this.selectedFiles.splice(index, 1);
+    handleChangeListFile(files, type) {
+      if (type === "file") {
+        files.forEach((item) => {
+          this.uploadFiles(item, type);
+        });
+      } else {
+        const progressItem = {
+          name: files[0]?.webkitRelativePath
+            ? files[0]?.webkitRelativePath.split("/")[0]
+            : "Folder",
+          fileLength: files.length,
+        };
+        this.uploadFiles(progressItem, type);
+      }
     },
-
-    check() {
-      console.log("this", this.selectedFiles);
+    handleDeleteFile(index) {
+      this.files.splice(index, 1);
     },
   },
 };

@@ -1,8 +1,7 @@
 <template>
   <div class="flex justify-center">
     <div class="w-2/3">
-      <!-- <UploadFile /> -->
-      <UploadTest />
+      <UploadFile />
     </div>
   </div>
 </template>
