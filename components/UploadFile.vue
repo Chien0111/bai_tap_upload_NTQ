@@ -98,9 +98,11 @@ export default {
   methods: {
     handleChangeFile(event) {
       this.handleChangeListFile([...event.target.files], "file");
+      this.$refs.inputFile.value = "";
     },
     handleChangeFolder(event) {
       this.handleChangeListFile([...event.target.files], "folder");
+      this.$refs.inputFolder.value = "";
     },
     handleDrop(event) {
       event.preventDefault();
@@ -142,6 +144,7 @@ export default {
       }
     },
     uploadFiles(file, type) {
+      let counter = 0;
       const progressItem = {
         ...file,
         name: file.name,
@@ -152,32 +155,35 @@ export default {
         isScan: false,
         isShowProgress: true,
       };
-      const intervalId = setInterval(() => {
-        if (type === "file") {
-          progressItem.process += 20;
-        } else if (progressItem.processFile <= progressItem.fileLength) {
-          progressItem.processFile += 1;
-          progressItem.process = Math.floor(
-            (progressItem.processFile / progressItem.fileLength) * 100
-          );
+      this.files.forEach((item) => {
+        if (item.name === progressItem.name) {
+          counter += 1;
+          progressItem.name = `${file.name} (${counter})`;
         }
-        if (progressItem.process == 100) {
-          clearInterval(intervalId);
-          progressItem.isScan = true;
-          const intervalScan = setTimeout(() => {
-            if (progressItem.process < 100) {
-              progressItem.process += 20;
-              progressItem.processFile = Math.round(
-                (progressItem.fileLength * progressItem.process) / 100
-              );
-            } else {
+      });
+
+      const intervalId = setInterval(
+        () => {
+          if (type === "file") {
+            progressItem.process += 20;
+          } else if (progressItem.processFile <= progressItem.fileLength) {
+            progressItem.processFile += 1;
+            progressItem.process = Math.floor(
+              (progressItem.processFile / progressItem.fileLength) * 100
+            );
+          }
+          if (progressItem.process == 100) {
+            clearInterval(intervalId);
+            progressItem.isScan = true;
+            const intervalScan = setTimeout(() => {
               clearTimeout(intervalScan);
               progressItem.isScan = false;
               progressItem.isShowProgress = false;
-            }
-          }, 3000);
-        }
-      }, 1000);
+            }, 3000);
+          }
+        },
+        type === "file" ? 400 : 2000
+      );
       this.files.push(progressItem);
     },
     handleChangeListFile(files, type) {
