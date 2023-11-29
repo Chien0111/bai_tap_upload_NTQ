@@ -6,11 +6,16 @@
         type="file"
         name="file"
         ref="inputFile"
+        id="inputFile"
         multiple
         hidden
         @change="handleChangeFile"
       />
-      <button @click="handleOpen('file')" class="bg-slate-300 rounded p-4 m-2">
+      <button
+        id="btnInputFile"
+        @click="handleOpen('file')"
+        class="bg-slate-300 rounded p-4 m-2"
+      >
         Upload file
       </button>
 
@@ -19,12 +24,14 @@
         type="file"
         name="file"
         ref="inputFolder"
+        id="inputFolder"
         webkitdirectory
         multiple
         hidden
         @change="handleChangeFolder"
       />
       <button
+        id="btnInputFolder"
         @click="handleOpen('folder')"
         class="bg-slate-300 rounded p-4 m-2"
       >
@@ -41,6 +48,12 @@
           <img
             v-if="item.preview === 'folder'"
             src="../static/folder.png"
+            alt=""
+            class="w-[50px] h-[50px]"
+          />
+          <img
+            v-else-if="item.preview === 'file'"
+            src="../static/file.png"
             alt=""
             class="w-[50px] h-[50px]"
           />
@@ -124,17 +137,20 @@ export default {
             });
           } else {
             // file
-            this.handleChangeListFile([item.getAsFile()], "file");
+            const fileList = dt.files ? Array.from(dt.files) : [];
+            this.handleChangeListFile(fileList, "file");
           }
         }
       }
     },
     readDirectory(directoryEntry, callback) {
-      const directoryReader = directoryEntry.createReader();
-      directoryReader.readEntries((entries) => {
-        const numberOfEntries = entries.length;
-        callback(numberOfEntries);
-      });
+      if (typeof directoryEntry.createReader === "function") {
+        const directoryReader = directoryEntry.createReader();
+        directoryReader.readEntries((entries) => {
+          const numberOfEntries = entries.length;
+          callback(numberOfEntries);
+        });
+      }
     },
     handleOpen(val) {
       if (val == "file") {
@@ -148,7 +164,7 @@ export default {
       const progressItem = {
         ...file,
         name: file.name,
-        preview: type === "file" ? URL.createObjectURL(file) : "folder",
+        ...(type === "folder" ? { preview: "folder" } : {}),
         fileLength: type === "file" ? "" : file.fileLength,
         process: 0,
         processFile: 0,
@@ -189,13 +205,21 @@ export default {
     handleChangeListFile(files, type) {
       if (type === "file") {
         files.forEach((item) => {
-          this.uploadFiles(item, type);
+          const progressItem = {
+            name: item.name,
+            preview:
+              item.type === "image/jpeg" || item.type === "image/png"
+                ? URL.createObjectURL(item)
+                : "file",
+          };
+          this.uploadFiles(progressItem, type);
         });
       } else {
         const progressItem = {
           name: files[0]?.webkitRelativePath
             ? files[0]?.webkitRelativePath.split("/")[0]
             : "Folder",
+          preview: "folder",
           fileLength: files.length,
         };
         this.uploadFiles(progressItem, type);
